@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  server-debug:
+    container-name: server-debug
+    build:
+      dockerfile: Dockerfile-debug
+    env_file:
+      - .env
+    ports:
+      - "${PORT}:${PORT}"
+      - "4000:4000"
