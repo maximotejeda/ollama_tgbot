@@ -1,4 +1,4 @@
-module github.com/maximotejeda/tgbot
+module github.com/maximotejeda/ollama_tgbot
 
 go 1.21.0
 
