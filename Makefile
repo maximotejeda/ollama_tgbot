@@ -5,7 +5,7 @@ export
 OS:=${shell go env GOOS}
 ARCH=$(shell go env GOARCH)
 OOSS="linux"
-ARRCHS="arm 386"
+ARRCHS="arm 386 amd64"
 DEBUG=1
 SERVICE=telegram_bot
 VERSION=0.0.0_1
@@ -26,14 +26,13 @@ run-image-debug: build-image-debug
 	@$(CONTAINERS)-compose -f docker-compose-debug.yaml up
 
 run-local:clean build
-	mkdir db
 	@bin/$(SERVICE)-$(OS)-$(ARCH)-$(VERSION)
 build:
 	@go build -o ./bin/$(SERVICE)-$(OS)-$(ARCH)-$(VERSION) ./cmd/telegram_bot
 test:
 	@go -count=1 test ./...
 clean:
-	@rm -rf ./bin ./db
+	@rm -rf ./bin 
 
 clean-image:
 	@$(CONTAINERS) system prune -f
