@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	tgbot "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	"github.com/maximotejeda/tgbot/dbx"
-	"github.com/maximotejeda/tgbot/ollama"
+	"github.com/maximotejeda/ollama_tgbot/dbx"
+	"github.com/maximotejeda/ollama_tgbot/ollama"
 )
 
 func main() {
@@ -122,7 +122,7 @@ func DoWeKnowUser(db *dbx.DB, user *tgbot.User) bool {
 }
 
 // Query ollama to manage ollama
-func QueryOllama(ctx context.Context, db *dbx.DB, log *slog.Logger, chatID int64, query string,us tgbot.User) tgbot.MessageConfig {
+func QueryOllama(ctx context.Context, db *dbx.DB, log *slog.Logger, chatID int64, query string,us *tgbot.User) tgbot.MessageConfig {
 	
 	var msg tgbot.MessageConfig
 	res := ollama.OllamaGenerate(ctx, query)
