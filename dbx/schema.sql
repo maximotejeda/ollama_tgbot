@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS history (
        id INTEGER PRIMARY KEY NOT NULL,
        user_id INTEGER NOT NULL,
        query_mode TEXT, -- chat or generatedepends of the type of access if empty chat
+       role TEXT,
        conversation TEXT,  -- group of prompts sent before will be limited to 10
        model_id INTEGER,
        created TEXT NOT NULL,
