@@ -5,7 +5,11 @@ import (
 	"log/slog"
 )
 
-type Model struct {
+type Model interface {
+	Query()
+}
+
+type model struct {
 	ctx       context.Context
 	db        *DB
 	log       *slog.Logger
@@ -17,22 +21,22 @@ type Model struct {
 	Deleted   string
 }
 
-func NewModel(ctx context.Context, db *DB, log *slog.Logger) *Model {
-	return &Model{ctx: ctx, db: db, log: log}
+func NewModel(ctx context.Context, db *DB, log *slog.Logger) *model {
+	return &model{ctx: ctx, db: db, log: log}
 }
 
-func (m *Model) Query() ([]Model, error) {
+func (m *model) Query() ([]model, error) {
 	stmt, err := m.db.PrepareContext(m.ctx, "SELECT model_name, model_tag FROM models")
 	if err != nil {
 		panic(err)
 	}
-	models := []Model{}
+	models := []model{}
 	res, err := stmt.Query()
 	if err != nil {
 		panic(err)
 	}
 	for res.Next() {
-		var model Model
+		var model model
 		if err := res.Scan(&model.ModelName, &model.ModelTag); err != nil {
 			return models, err
 		}
