@@ -77,18 +77,18 @@ func main() {
 
 		}
 		if update.Message != nil {
-
-			log.Info(fmt.Sprintf("[%s] %s", update.Message.From.UserName, update.Message.Text))
+			user := dbx.NewUser(ctx, db, log)
+			user.Query(update.Message.From.ID)
+			//log.Info(fmt.Sprintf("[%s] %s", update.Message.From.UserName, update.Message.Text))
 
 			if update.Message.Text != "" && !update.Message.IsCommand() {
-				msg = QueryOllama(ctx, db, log, update.Message.Chat.ID, update.Message.Text, update.Message.From)
+				msg = QueryOllama(ctx, db, log, update.Message.Chat.ID, update.Message.Text, update.Message.From, user)
 			} else if update.Message.IsCommand() {
 				msg = CommandHandler(ctx, db, log, update.Message.Command(), update.Message.Text, update.Message.Chat.ID)
 
 			}
 			MessageHandler(msg, update.Message.MessageID)
 			if _, err := bot.Send(msg); err != nil {
-
 				panic(err)
 			}
 			cancel()
@@ -110,9 +110,9 @@ func main() {
 
 }
 
-// query DB to manage users
+// DoWeKnowUser
+// Limit users who can or not use the app
 func DoWeKnowUser(db *dbx.DB, user *tgbot.User) bool {
-	fmt.Printf("username: %s with ID: %d\n\tFirstName%s\n\tLastName:%s ", user.UserName, user.ID, user.FirstName, user.LastName)
 	ctx := context.Background()
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	use := dbx.NewUser(ctx, db, log)
@@ -121,85 +121,103 @@ func DoWeKnowUser(db *dbx.DB, user *tgbot.User) bool {
 	return boo
 }
 
-// Query ollama to manage ollama
-func QueryOllama(ctx context.Context, db *dbx.DB, log *slog.Logger, chatID int64, query string,us *tgbot.User) tgbot.MessageConfig {
-	
-	var msg tgbot.MessageConfig
-	res := ollama.OllamaGenerate(ctx, query)
-	msg = tgbot.NewMessage(chatID, res)
+
+// QueryOllama
+// Query ollama with the user params
+func QueryOllama(ctx context.Context, db *dbx.DB, log *slog.Logger, chatID int64, query string,us *tgbot.User, user *dbx.User) tgbot.MessageConfig {
+	oClient := ollama.NewOllamaClient(ctx, db, log, user)
+	res := oClient.Do(query)
+	msg := tgbot.NewMessage(chatID, res)
 	return msg
 }
 
-// finally decide over the sending message
+// MessageHandler
+// mainly only reply text sent
 func MessageHandler(msg tgbot.MessageConfig, replyID int) tgbot.Chattable {
 	msg.ReplyToMessageID = replyID
 	return msg
 }
 
+// CommandHandler
+// Options for user to create queries on the bot
 func CommandHandler(ctx context.Context, db *dbx.DB, log *slog.Logger, command, msgTxt string, chatID int64) tgbot.MessageConfig {
-	var msg tgbot.MessageConfig
+	var (
+		msg tgbot.MessageConfig
+		usr = dbx.NewUser(ctx,db,log)
+	)
+	
+	usr.Query(chatID)
 	value := strings.Split(msgTxt, " ")
 	msg.ChatID = chatID
-	switch command {
-	case "model":
+	
+	switch strings.ToLower(command) {
+	case "model", "modelo":
 		mod := dbx.NewModel(ctx, db, log)
 		modelsRes, err := mod.Query()
 		if err != nil {
 			panic(err)
 		}
 		models := map[string]string{}
-		//models := map[string]string{"orca": "orca-mini", "llama2": "llama2-uncensored", "code": "codellama"}
 		for _, v := range modelsRes {
 			models[v.ModelName] = "models=true&name=" + v.ModelName + ":" + v.ModelTag
 		}
-		//	log.Warn(fmt.Sprintf("%v", models))
 		keyboard := CreateKeyboard(models)
 		if len(value) < 2 {
-			msg.Text = "Here are the models available."
+			msg.Text = "Models available to chat or generate prompts."
 			msg.ReplyMarkup = keyboard
 		} else {
 			msg.Text = "changing model " + value[1]
 		}
+	case "status", "info":
+		btnSTR := map[string]string{"ok": "status=true"}
+		keyboard := CreateKeyboard(btnSTR)
+		msg.ReplyMarkup = keyboard
+		msg.Text = fmt.Sprintf("User config information\n\tmodel: %s\n\tmode: %s",usr.Model, usr.Mode)
 	case "reset":
-		reset := map[string]string{"reset": "reset=true"}
+		reset := map[string]string{"Reset": "reset=true", "Reset All": "resetAll=true"}
 		keyboard := CreateKeyboard(reset)
 		msg.ReplyMarkup = keyboard
-		msg.Text = "reseting context"
+		msg.Text = "Reset user chat interaction of a concrete model or all interactions with all models."
 	case "listusers":
 		msg.Text = "Listing distinct users"
-	case "mode":
+	case "mode", "modo":
 		modes := map[string]string{"chat": "mode=true&name=chat", "generate": "mode=true&name=generate"}
 		keyboard := CreateKeyboard(modes)
 		msg.ReplyMarkup = keyboard
-		msg.Text = "query mode will be changed"
-	case "help", "start":
-		msg.Text = "Welcome to the bot\nHere are some command to interact with the different models model\n\t/help: print this message\n\t/reset: reset chat context\n\t/model: specify the model to work with\n\t/mode: change the query without context"
+		msg.Text = "Query mode will be changed"
+	case "help", "start", "ayuda", "h":
+		msg.Text = "Welcome to the bot\nHere are some command to interact with the different models \n\t/help: print this message\n\t/status: print actual query info\n\t/reset: reset chat context\n\t/model: specify the model to work with\n\t/mode: change the query without context"
 	default:
-		msg.Text = "unknown command"
+		msg.Text = "unknown command try with \n/help: to get bot info."
 	}
 	return msg
 }
 
+// CreateKeyboard
+// create keybowrds of two rows of any map[string]string input
 func CreateKeyboard(data map[string]string) tgbot.InlineKeyboardMarkup {
 	// hardcoded models
 	keyboard := tgbot.NewInlineKeyboardMarkup()
-	subbuttons := []tgbot.InlineKeyboardButton{}
+	//	subbuttons := []tgbot.InlineKeyboardButton{}
+	rows := tgbot.NewInlineKeyboardRow()
+	counter := 0
 	for key, val := range data {
-		button := tgbot.NewInlineKeyboardButtonData(key, val)
-		subbuttons = append(subbuttons, button)
-		if len(subbuttons) == 2 {
-			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, subbuttons)
-			subbuttons = []tgbot.InlineKeyboardButton{}
-			continue
-		} else if len(keyboard.InlineKeyboard) >= 1 && len(subbuttons) == 1 {
-			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, subbuttons)
-		} else if len(keyboard.InlineKeyboard) == 0 && len(data) == 1 {
-			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, subbuttons)
+
+		if (counter!= 0 && counter %2 == 0) {
+			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, rows)
+			rows = tgbot.NewInlineKeyboardRow() 
 		}
+		rows = append(rows, tgbot.NewInlineKeyboardButtonData(key, val))
+		if counter >= len(data)-1{
+			keyboard.InlineKeyboard = append(keyboard.InlineKeyboard, rows)
+		}
+		counter ++
 	}
 	return keyboard
 }
 
+// ConsultAdmin
+// ask admin hardcoded on env to grant access
 func ConsultAdmin(ctx context.Context, db *dbx.DB, log *slog.Logger, chatID int64, user tgbot.User) *tgbot.MessageConfig {
 	adminID, err := strconv.ParseInt(os.Getenv("TELEGRAM_ADMIN_ID"), 10, 64)
 	if err != nil {
@@ -221,6 +239,8 @@ func ConsultAdmin(ctx context.Context, db *dbx.DB, log *slog.Logger, chatID int6
 	return &msg
 }
 
+// QueryHandler
+// Manage queries to execute user commands
 func QueryHandler(ctx context.Context, db *dbx.DB, log *slog.Logger, query *tgbot.CallbackQuery) (msg *tgbot.MessageConfig) {
 	tUser := query.From
 	user := dbx.NewUser(ctx, db, log)
@@ -230,7 +250,7 @@ func QueryHandler(ctx context.Context, db *dbx.DB, log *slog.Logger, query *tgbo
 	dataMap := map[string]string{}
 	for _, val := range dataList {
 		subData := strings.Split(val, "=")
-		log.Warn(subData[0])
+		//log.Warn(subData[0])
 		dataMap[subData[0]] = subData[1]
 	}
 
@@ -238,7 +258,7 @@ func QueryHandler(ctx context.Context, db *dbx.DB, log *slog.Logger, query *tgbo
 	case dataMap["del"] != "" || dataMap["add"] != "":
 		user1 := dbx.NewUser(ctx, db, log)
 		telegramID, ok := dataMap["tid"]
-		log.Warn("info from map", "username:", dataMap["uname"], "tgID:", dataMap["tid"], dataMap)
+		
 		id, err := strconv.ParseInt(telegramID, 10, 64)
 		if err != nil {
 			log.Error("converting to in64", "error", err.Error())
@@ -251,7 +271,7 @@ func QueryHandler(ctx context.Context, db *dbx.DB, log *slog.Logger, query *tgbo
 			msg.Text = "no username provided"
 		}
 		if dataMap["add"] != "" {
-			log.Warn("info from map", "username:", username, "tgID:", id, dataMap)
+			//log.Warn("info from map", "username:", username, "tgID:", id, dataMap)
 			if id == 0 {
 				log.Error("bad key conversion", "id", id)
 				break
@@ -271,12 +291,24 @@ func QueryHandler(ctx context.Context, db *dbx.DB, log *slog.Logger, query *tgbo
 			log.Error("", "error", err.Error())
 		}
 	case dataMap["mode"] != "":
-
 		user.Query(tUser.ID)
 		_, err := user.SetMode(dataMap["name"])
 		if err != nil {
 			log.Error("", "error", err.Error())
 		}
+	case dataMap["reset"] != "":
+		h := dbx.NewHistory(ctx, db, log)
+		ok := h.Reset(*user)
+		if !ok {
+			log.Error("[query reset] error")
+		}
+	case dataMap["resetAll"] != "":
+		h := dbx.NewHistory(ctx, db, log)
+		ok := h.ResetAll(*user)
+		if !ok {
+			log.Error("[query reset] error")
+		}
+
 	}
 
 	return msg
