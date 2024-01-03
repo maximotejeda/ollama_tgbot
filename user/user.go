@@ -9,21 +9,37 @@
 // when the goods are delivered we mark them as done
 package user
 
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"strconv"
 
-// Base user that is the root os all the other user types
-type user{
-	
-}
-// delivery type user will be on charge of transport goods
-type Delivery struct{
+	tgbot "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/maximotejeda/ollama_tgbot/dbx"
+	"github.com/maximotejeda/ollama_tgbot/helpers"
+)
 
-}
+// ConsultAdmin
+// ask admin hardcoded on env to grant access
+func ConsultAdmin(ctx context.Context, db *dbx.DB, log *slog.Logger, chatID int64, user tgbot.User) *tgbot.MessageConfig {
+	adminID, err := strconv.ParseInt(os.Getenv("TELEGRAM_ADMIN_ID"), 10, 64)
+	if err != nil {
+		log.Error("needs an admin on db to manage users", "error", err.Error())
+		return nil
+	}
+	admin := dbx.NewUser(ctx, db, log)
+	txt := fmt.Sprintf("user %s \nID %d\nfirstName %s\nlastname: %s\n is trying to enter the chat with bot, acess was requested", user.UserName, user.ID, user.FirstName, user.LastName)
 
-// se
-type Seller struct{
-	
-}
+	msg := tgbot.NewMessage(adminID, txt)
 
-type Admin struct {
+	if ok := admin.Query(adminID); ok {
+		queryData := fmt.Sprintf("tid=%d&uname=%s", user.ID, user.UserName)
 
+		data := map[string]string{"delete": "del=true&" + queryData, "add": "add=true&" + queryData}
+		replyKeyboard := helpers.CreateKeyboard(data)
+		msg.ReplyMarkup = replyKeyboard
+	}
+	return &msg
 }
